@@ -4,4 +4,4 @@ Creating a tcp connection between a client and server
 3. the client would have a pinger that would send pings to the listener to show thats its alive
    
 4. the listener would have a setDeadline on reads and writes that should timeout if nothing is recieved from the client
-5. the listener should have a graceful shutdown mechanism that both closes the pinger and the connection(the client) 
+5. the listener should have a graceful shutdown mechanism that closes the connection(the client) 

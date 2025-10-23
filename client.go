@@ -16,29 +16,35 @@ func StartClient(addr string) {
 	conn, err := d.DialContext(ctxClient, "tcp", addr)
 
 	if err != nil {
-		fmt.Printf("Err with client connection %q", err)
+		fmt.Printf("Err with client connection %q\n", err)
 		return
 	}
-
-	defer conn.Close()
 
 	ctxPinger, cancelPinger := context.WithCancel(context.Background())
-	defer cancelPinger()
 
-	resetTimer := make(chan time.Duration)
+	resetTimer := make(chan time.Duration, 1)
+
+	resetTimer <- 2 * time.Second
 
 	go Pinger(ctxPinger, conn, resetTimer)
-
-	if err = conn.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
-		fmt.Printf("SetDeadline error: %v\n", err)
-		return
-	}
 
 	buf := make([]byte, 1024)
 
 	go func() {
+		defer func() {
+			close(resetTimer)
+			cancelPinger()
+			cancelClient()
+			conn.Close()
+		}()
 
 		for {
+
+			if err = conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+				fmt.Printf("SetDeadline error: %v\n", err)
+				return
+			}
+
 			n, err := conn.Read(buf)
 
 			if err != nil {
@@ -48,21 +54,20 @@ func StartClient(addr string) {
 
 			resetTimer <- 0
 
-			fmt.Printf("Data processed and recieved is: %v", buf[:n])
+			fmt.Printf("Data processed and recieved is: %v\n", buf[:n])
 
-			if err = conn.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+			if err = conn.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
 				fmt.Printf("SetDeadline error: %v\n", err)
 				return
 			}
 
-			_, err = conn.Write([]byte("This is a message from client"))
+			_, err = conn.Write([]byte("This is a message from client\n"))
 
 			if err != nil {
-				fmt.Printf("Error reading from server %q", err)
+				fmt.Printf("Error reading from server %q\n", err)
 				return
 			}
 
-			resetTimer <- 0
 		}
 
 	}()
@@ -71,6 +76,7 @@ func StartClient(addr string) {
 
 func Pinger(ctx context.Context, conn net.Conn, resetTimer <-chan time.Duration) {
 	var interval time.Duration
+	var err error
 	select {
 	case <-ctx.Done():
 		return
@@ -108,10 +114,16 @@ func Pinger(ctx context.Context, conn net.Conn, resetTimer <-chan time.Duration)
 			}
 
 		case <-timer.C:
+
+			if err = conn.SetWriteDeadline(time.Now().Add(2 * time.Second)); err != nil {
+				fmt.Printf("SetDeadline error: %v\n", err)
+				return
+			}
+
 			_, err := conn.Write([]byte("ping"))
 
 			if err != nil {
-				fmt.Printf("failed to write: %v", err)
+				fmt.Printf("failed to write: %v\n", err)
 				return
 			}
 		}
